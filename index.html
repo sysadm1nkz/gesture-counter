@@ -31,83 +31,63 @@
   <div id="counter"></div>
 
   <script>
-    // === 1. Ссылки на модель и Google Script ===
-    const URL = "https://teachablemachine.withgoogle.com/models/BOgPcvG-z/";
-    const scriptURL = "https://script.google.com/macros/s/AKfycbzSt-qNAZ7h2NvwVEUm7Mqh5sbGsj37S__RV6PC3UI2TJKZD4NcpMsyNVrdxC57XaPb/exec";
+  const URL = "https://teachablemachine.withgoogle.com/models/BOgPcvG-z/";
+  const scriptURL = "https://script.google.com/macros/s/AKfycbzSt-qNAZ7h2NvwVEUm7Mqh5sbGsj37S__RV6PC3UI2TJKZD4NcpMsyNVrdxC57XaPb/exec";
 
-    let model, webcam, labelContainer, maxPredictions;
-    let counts = {};
-    let lastGesture = "";
-    let lastTime = 0;
+  let model, video, labelContainer, maxPredictions;
+  let counts = {};
 
-    // === 2. Инициализация модели ===
-    async function init() {
-      const modelURL = URL + "model.json";
-      const metadataURL = URL + "metadata.json";
+  async function init() {
+    const modelURL = URL + "model.json";
+    const metadataURL = URL + "metadata.json";
 
-      model = await tmImage.load(modelURL, metadataURL);
-      maxPredictions = model.getTotalClasses();
+    model = await tmImage.load(modelURL, metadataURL);
+    maxPredictions = model.getTotalClasses();
 
-      const flip = true;
-      webcam = new tmImage.Webcam(320, 240, flip);
-      await webcam.setup();
-      await webcam.play();
-      window.requestAnimationFrame(loop);
 
-      document.getElementById("webcam-container").appendChild(webcam.canvas);
-      labelContainer = document.getElementById("label-container");
-      for (let i = 0; i < maxPredictions; i++) {
-        labelContainer.appendChild(document.createElement("div"));
-      }
+    video = document.createElement("video");
+    video.width = 320;
+    video.height = 240;
+    video.autoplay = true;
+    document.getElementById("webcam-container").appendChild(video);
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = stream;
 
-      // Получаем метки классов
-      const metadata = await fetch(metadataURL).then(r => r.json());
-      metadata.labels.forEach(label => counts[label] = 0);
+    labelContainer = document.getElementById("label-container");
+    for (let i = 0; i < maxPredictions; i++) {
+      labelContainer.appendChild(document.createElement("div"));
     }
 
-    // === 3. Основной цикл ===
-    async function loop() {
-      webcam.update();
-      await predict();
-      window.requestAnimationFrame(loop);
+    const metadata = await fetch(metadataURL).then(r => r.json());
+    metadata.labels.forEach(label => counts[label] = 0);
+
+    loop();
+  }
+
+  async function loop() {
+    await predict();
+    window.requestAnimationFrame(loop);
+  }
+
+  async function predict() {
+    const prediction = await model.predict(video);
+    let highest = prediction.reduce((a, b) => (a.probability > b.probability) ? a : b);
+
+    if (highest.probability > 0.9) {
+      counts[highest.className]++;
+      document.getElementById("counter").innerHTML =
+        `👉 <b>${highest.className}</b> показан ${counts[highest.className]} раз(а)`;
     }
 
-    // === 4. Распознавание ===
-    async function predict() {
-      const prediction = await model.predict(webcam.canvas);
-      let highest = prediction.reduce((a, b) => (a.probability > b.probability) ? a : b);
-      
-      for (let i = 0; i < maxPredictions; i++) {
-        const classPrediction =
-          `${prediction[i].className}: ${prediction[i].probability.toFixed(2)}`;
-        labelContainer.childNodes[i].innerHTML = classPrediction;
-      }
-
-      // Если уверенность высокая (>0.9) и прошло 2 секунды с последнего жеста
-      if (highest.probability > 0.9 && highest.className !== lastGesture && Date.now() - lastTime > 2000) {
-        counts[highest.className]++;
-        lastGesture = highest.className;
-        lastTime = Date.now();
-
-        document.getElementById("counter").innerHTML =
-          `👉 <b>${highest.className}</b> показан ${counts[highest.className]} раз(а)`;
-
-        sendToGoogle(highest.className, counts[highest.className]);
-      }
+    for (let i = 0; i < maxPredictions; i++) {
+      const classPrediction =
+        `${prediction[i].className}: ${prediction[i].probability.toFixed(2)}`;
+      labelContainer.childNodes[i].innerHTML = classPrediction;
     }
+  }
 
-    // === 5. Отправка данных в Google Таблицу ===
-    function sendToGoogle(gesture, count) {
-      fetch(scriptURL, {
-        method: "POST",
-        mode: "no-cors",
-        body: JSON.stringify({ gesture: gesture, count: count }),
-        headers: { "Content-Type": "application/json" }
-      });
-      console.log("Отправлено:", gesture, count);
-    }
-
-    init();
-  </script>
+  init();
+</script>
 </body>
 </html>
+
