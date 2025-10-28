@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Распознавание жестов</title>
+<style>
+  body {
+    font-family: "Segoe UI", sans-serif;
+    text-align: center;
+    background: #f3f3f3;
+    margin: 0;
+    padding: 0;
+  }
+  h1 { color: #222; }
+  video, canvas {
+    margin-top: 15px;
+    border-radius: 12px;
+  }
+  #count {
+    font-size: 1.5em;
+    margin-top: 10px;
+    color: #333;
+  }
+</style>
+</head>
+<body>
+<h1>Распознавание жестов</h1>
+<p id="status">Загрузка модели...</p>
+<video id="webcam" width="320" height="240" autoplay muted></video>
+<div id="count">Подсчёт жестов: 0</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+<script>
+const URL = "https://teachablemachine.withgoogle.com/models/1SAtRsD4sk79N_V6LSNmZ076t2-vZY1QY/";
+let model, webcam, count = 0, lastLabel = "";
+
+async function init() {
+  const modelURL = URL + "model.json";
+  const metadataURL = URL + "metadata.json";
+  model = await tmImage.load(modelURL, metadataURL);
+  webcam = new tmImage.Webcam(320, 240, true);
+  await webcam.setup();
+  await webcam.play();
+  window.requestAnimationFrame(loop);
+  document.getElementById("status").innerText = "Модель загружена ✅";
+  document.body.appendChild(webcam.canvas);
+}
+
+async function loop() {
+  webcam.update();
+  await predict();
+  window.requestAnimationFrame(loop);
+}
+
+async function predict() {
+  const prediction = await model.predict(webcam.canvas);
+  let maxPred = prediction.reduce((a, b) => a.probability > b.probability ? a : b);
+  if (maxPred.className !== lastLabel && maxPred.probability > 0.8) {
+    lastLabel = maxPred.className;
+    count++;
+    document.getElementById("count").innerText = "Подсчёт жестов: " + count + " (" + lastLabel + ")";
+  }
+}
+
+init();
+</script>
+</body>
+</html>
