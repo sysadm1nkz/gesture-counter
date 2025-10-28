@@ -3,8 +3,6 @@
 <head>
   <meta charset="UTF-8">
   <title>Распознавание жестов</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image"></script>
   <style>
     body { 
       font-family: Arial, sans-serif; 
@@ -29,6 +27,8 @@
   <div id="webcam-container"></div>
   <div id="label-container"></div>
   <div id="counter"></div>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest"></script>
 
   <script>
   const URL = "https://teachablemachine.withgoogle.com/models/BOgPcvG-z/";
@@ -90,4 +90,5 @@
 </script>
 </body>
 </html>
+
 
