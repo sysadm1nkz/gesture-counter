@@ -1,68 +1,113 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8">
-<title>Распознавание жестов</title>
-<style>
-  body {
-    font-family: "Segoe UI", sans-serif;
-    text-align: center;
-    background: #f3f3f3;
-    margin: 0;
-    padding: 0;
-  }
-  h1 { color: #222; }
-  video, canvas {
-    margin-top: 15px;
-    border-radius: 12px;
-  }
-  #count {
-    font-size: 1.5em;
-    margin-top: 10px;
-    color: #333;
-  }
-</style>
+  <meta charset="UTF-8">
+  <title>Распознавание жестов</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image"></script>
+  <style>
+    body { 
+      font-family: Arial, sans-serif; 
+      text-align: center; 
+      background: #f4f7fb; 
+      margin-top: 40px;
+    }
+    video, canvas { 
+      border-radius: 10px; 
+      box-shadow: 0 4px 10px rgba(0,0,0,0.2); 
+    }
+    #counter {
+      font-size: 20px;
+      font-weight: bold;
+      margin-top: 15px;
+      color: #333;
+    }
+  </style>
 </head>
 <body>
-<h1>Распознавание жестов</h1>
-<p id="status">Загрузка модели...</p>
-<video id="webcam" width="320" height="240" autoplay muted></video>
-<div id="count">Подсчёт жестов: 0</div>
+  <h2>Распознавание жестов (Teachable Machine)</h2>
+  <div id="webcam-container"></div>
+  <div id="label-container"></div>
+  <div id="counter"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
-<script>
-const URL = "https://teachablemachine.withgoogle.com/models/1SAtRsD4sk79N_V6LSNmZ076t2-vZY1QY/";
-let model, webcam, count = 0, lastLabel = "";
+  <script>
+    // === 1. Ссылки на модель и Google Script ===
+    const URL = "https://teachablemachine.withgoogle.com/models/BOgPcvG-z/";
+    const scriptURL = "https://script.google.com/macros/s/AKfycbzSt-qNAZ7h2NvwVEUm7Mqh5sbGsj37S__RV6PC3UI2TJKZD4NcpMsyNVrdxC57XaPb/exec";
 
-async function init() {
-  const modelURL = URL + "model.json";
-  const metadataURL = URL + "metadata.json";
-  model = await tmImage.load(modelURL, metadataURL);
-  webcam = new tmImage.Webcam(320, 240, true);
-  await webcam.setup();
-  await webcam.play();
-  window.requestAnimationFrame(loop);
-  document.getElementById("status").innerText = "Модель загружена ✅";
-  document.body.appendChild(webcam.canvas);
-}
+    let model, webcam, labelContainer, maxPredictions;
+    let counts = {};
+    let lastGesture = "";
+    let lastTime = 0;
 
-async function loop() {
-  webcam.update();
-  await predict();
-  window.requestAnimationFrame(loop);
-}
+    // === 2. Инициализация модели ===
+    async function init() {
+      const modelURL = URL + "model.json";
+      const metadataURL = URL + "metadata.json";
 
-async function predict() {
-  const prediction = await model.predict(webcam.canvas);
-  let maxPred = prediction.reduce((a, b) => a.probability > b.probability ? a : b);
-  if (maxPred.className !== lastLabel && maxPred.probability > 0.8) {
-    lastLabel = maxPred.className;
-    count++;
-    document.getElementById("count").innerText = "Подсчёт жестов: " + count + " (" + lastLabel + ")";
-  }
-}
+      model = await tmImage.load(modelURL, metadataURL);
+      maxPredictions = model.getTotalClasses();
 
-init();
-</script>
+      const flip = true;
+      webcam = new tmImage.Webcam(320, 240, flip);
+      await webcam.setup();
+      await webcam.play();
+      window.requestAnimationFrame(loop);
+
+      document.getElementById("webcam-container").appendChild(webcam.canvas);
+      labelContainer = document.getElementById("label-container");
+      for (let i = 0; i < maxPredictions; i++) {
+        labelContainer.appendChild(document.createElement("div"));
+      }
+
+      // Получаем метки классов
+      const metadata = await fetch(metadataURL).then(r => r.json());
+      metadata.labels.forEach(label => counts[label] = 0);
+    }
+
+    // === 3. Основной цикл ===
+    async function loop() {
+      webcam.update();
+      await predict();
+      window.requestAnimationFrame(loop);
+    }
+
+    // === 4. Распознавание ===
+    async function predict() {
+      const prediction = await model.predict(webcam.canvas);
+      let highest = prediction.reduce((a, b) => (a.probability > b.probability) ? a : b);
+      
+      for (let i = 0; i < maxPredictions; i++) {
+        const classPrediction =
+          `${prediction[i].className}: ${prediction[i].probability.toFixed(2)}`;
+        labelContainer.childNodes[i].innerHTML = classPrediction;
+      }
+
+      // Если уверенность высокая (>0.9) и прошло 2 секунды с последнего жеста
+      if (highest.probability > 0.9 && highest.className !== lastGesture && Date.now() - lastTime > 2000) {
+        counts[highest.className]++;
+        lastGesture = highest.className;
+        lastTime = Date.now();
+
+        document.getElementById("counter").innerHTML =
+          `👉 <b>${highest.className}</b> показан ${counts[highest.className]} раз(а)`;
+
+        sendToGoogle(highest.className, counts[highest.className]);
+      }
+    }
+
+    // === 5. Отправка данных в Google Таблицу ===
+    function sendToGoogle(gesture, count) {
+      fetch(scriptURL, {
+        method: "POST",
+        mode: "no-cors",
+        body: JSON.stringify({ gesture: gesture, count: count }),
+        headers: { "Content-Type": "application/json" }
+      });
+      console.log("Отправлено:", gesture, count);
+    }
+
+    init();
+  </script>
 </body>
 </html>
